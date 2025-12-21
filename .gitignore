@@ -1,0 +1,6 @@
+.venv/
+venv/
+
+#env file
+.env
+env
