@@ -1,8 +1,18 @@
 import os
+import sys
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 import argparse
+from prompts import system_prompt
+
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from functions.call_function import available_functions
+
+
 
 
 def main():
@@ -36,13 +46,28 @@ def main():
 
     # we need a history of the previous conversations.
     messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
+    
+    # --- TO PASS THE TEST (GPT GENERATED) ---
+    # messages = [
+    # types.Content(
+    #     role="user",
+    #     parts=[types.Part(
+    #         text=f"{system_prompt}\n\nUser input:\n{args.user_prompt}"
+    #     )]
+    #     )
+    # ]
+
 
     
 
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=messages
+        contents=messages,
+        #config = types.GenerateContentConfig(system_instruction = system_prompt)
+        config=types.GenerateContentConfig(
+        tools=[available_functions], system_instruction=system_prompt
+        )
     )
 
     #To check if tokens are generated
@@ -58,10 +83,26 @@ def main():
             print("User prompt:",args.user_prompt)
             print("Prompt tokens:",prompt_tokens)
             print("Response tokens:",response_tokens)
-            print("Response:\n",response.text)        
+            # Handle function calls if present
+            if response.function_calls:
+                for function_call in response.function_calls:
+                    print(
+                        f"Calling function: {function_call.name}({function_call.args})"
+                    )
+            else:
+                print(response.text)
+       
             
         else:
-            print(response.text)
+            # Handle function calls if present
+            if response.function_calls:
+                for function_call in response.function_calls:
+                    print(
+                        f"Calling function: {function_call.name}({function_call.args})"
+                    )
+            else:
+                print(response.text)
+
     
 
 
