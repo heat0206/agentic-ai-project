@@ -11,6 +11,8 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from functions.call_function import available_functions
+from functions.call_function import call_function
+
 
 
 
@@ -84,26 +86,40 @@ def main():
             print("Prompt tokens:",prompt_tokens)
             print("Response tokens:",response_tokens)
             # Handle function calls if present
+            function_results = []
+
             if response.function_calls:
                 for function_call in response.function_calls:
-                    print(
-                        f"Calling function: {function_call.name}({function_call.args})"
+
+                    # Execute the function via dispatcher
+                    function_call_result = call_function(
+                        function_call,
+                        verbose=args.verbose,
                     )
+
+                    # Defensive checks
+                    if not function_call_result.parts:
+                        raise RuntimeError("Function call returned no parts")
+
+                    function_response = function_call_result.parts[0].function_response
+                    if function_response is None:
+                        raise RuntimeError("Missing function_response")
+
+                    response_payload = function_response.response
+                    if response_payload is None:
+                        raise RuntimeError("Function response payload is None")
+
+                    # Store result
+                    function_results.append(function_call_result.parts[0])
+
+                    # Optional verbose logging
+                    if args.verbose:
+                        print(f"-> {response_payload}")
+
             else:
-                print(response.text)
-       
-            
-        else:
-            # Handle function calls if present
-            if response.function_calls:
-                for function_call in response.function_calls:
-                    print(
-                        f"Calling function: {function_call.name}({function_call.args})"
-                    )
-            else:
+                # No function call → normal text response
                 print(response.text)
 
-    
 
 
 if __name__ == "__main__":
