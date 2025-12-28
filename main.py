@@ -47,78 +47,66 @@ def main():
     # Now we can access `args.user_prompt`
 
     # we need a history of the previous conversations.
-    messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
-    
-    # --- TO PASS THE TEST (GPT GENERATED) ---
-    # messages = [
-    # types.Content(
-    #     role="user",
-    #     parts=[types.Part(
-    #         text=f"{system_prompt}\n\nUser input:\n{args.user_prompt}"
-    #     )]
-    #     )
-    # ]
-
-
-    
-
-
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=messages,
-        #config = types.GenerateContentConfig(system_instruction = system_prompt)
-        config=types.GenerateContentConfig(
-        tools=[available_functions], system_instruction=system_prompt
+    messages = [
+        types.Content(
+            role="user",
+            parts=[types.Part(text=args.user_prompt)]
         )
-    )
+    ]
 
-    #To check if tokens are generated
-    if response.usage_metadata is None:
-        raise RuntimeError(
-            "Failed API request, No tokens generated!"
+    for _ in range(20):
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=messages,
+            config=types.GenerateContentConfig(
+                tools=[available_functions],
+                system_instruction=system_prompt
+            )
         )
-    else:
-        if args.verbose:
-            #to keep a track of number of tokens used
-            prompt_tokens = response.usage_metadata.prompt_token_count
-            response_tokens = response.usage_metadata.candidates_token_count
-            print("User prompt:",args.user_prompt)
-            print("Prompt tokens:",prompt_tokens)
-            print("Response tokens:",response_tokens)
-            # Handle function calls if present
-            function_results = []
 
-            if response.function_calls:
-                for function_call in response.function_calls:
+        # --- Token logging (early) ---
+        if response.usage_metadata and args.verbose:
+            print("Prompt tokens:", response.usage_metadata.prompt_token_count)
+            print("Response tokens:", response.usage_metadata.candidates_token_count)
 
-                    # Execute the function via dispatcher
-                    function_call_result = call_function(
-                        function_call,
-                        verbose=args.verbose,
+        # --- Add model output to history ---
+        for candidate in response.candidates:
+            messages.append(candidate.content)
+
+        function_responses=[]
+        tool_called = False
+
+        # --- Handle tool calls ---
+        for candidate in response.candidates:
+            for part in candidate.content.parts:
+                if part.function_call:
+                    tool_called = True
+                    tool_response = call_function(
+                        part.function_call,
+                        verbose=args.verbose
                     )
 
-                    # Defensive checks
-                    if not function_call_result.parts:
-                        raise RuntimeError("Function call returned no parts")
+                    function_responses.extend(tool_response.parts)
+                    
+        if tool_called:
+            messages.append(
+                types.Content(
+                    role="user",
+                    parts=function_responses
+                )
+            )
 
-                    function_response = function_call_result.parts[0].function_response
-                    if function_response is None:
-                        raise RuntimeError("Missing function_response")
 
-                    response_payload = function_response.response
-                    if response_payload is None:
-                        raise RuntimeError("Function response payload is None")
+        # --- Stop if model is done ---
+        if not tool_called:
+            # Final answer reached
+            for part in response.candidates[0].content.parts:
+                if part.text:
+                    print(part.text)
+            return
 
-                    # Store result
-                    function_results.append(function_call_result.parts[0])
-
-                    # Optional verbose logging
-                    if args.verbose:
-                        print(f"-> {response_payload}")
-
-            else:
-                # No function call → normal text response
-                print(response.text)
+    print("❌ Agent failed to reach a final response within 20 iterations.")
+    sys.exit(1)
 
 
 
